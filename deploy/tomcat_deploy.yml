@@ -1,0 +1,88 @@
+---
+  - name: Install and configure Tomcat
+    hosts: localhost
+    gather_facts: false
+    become: yes
+    vars:
+         -  taille_dev: "-Dfile.encoding=UTF-8 -Xms256m -Xmx256m -XX:PermSize=256m -XX:MaxPermSize=1024m"
+         -  taille_prod: "-Dfile.encoding=UTF-8 -Xms256m -Xmx512m -XX:PermSize=256m -XX:MaxPermSize=1024m"
+    tasks:
+      - name: Updating repos
+        yum:
+            name: "*"
+            state: latest
+      - name: Installing required java
+        yum:
+            name: java-1.8.0-openjdk
+            state: present
+      - name: Downloading the required tomcat
+        get_url:
+            url: "https://archive.apache.org/dist/tomcat/tomcat-9/v9.0.50/bin/apache-tomcat-9.0.50.tar.gz"
+            dest: /usr/local
+      - name: Extracting downloaded tomcat
+        unarchive:
+            src: "/usr/local/apache-tomcat-9.0.50.tar.gz"
+            dest: /usr/local
+      - name: Renaming tomcat home
+        command: mv /usr/local/apache-tomcat-9.0.50 /usr/local/tomcat
+      - name: renommer fichier context
+        command: mv /usr/local/tomcat/webapps/manager/META-INF/context.xml /usr/local/tomcat/webapps/manager/META-INF/context_origin.xml
+      - name: ansible template with_items example context
+        template:
+          src: /data/context.xml
+          dest: /usr/local/tomcat/webapps/manager/META-INF
+          mode: 0777
+          backup: yes
+          owner: root
+          group: root
+      - name: renommer tomcat user
+        command: mv /usr/local/tomcat/conf/tomcat-users.xml /usr/local/tomcat/conf/tomcat-users_origin.xml
+      - name: ansible template with_items example tomcat user
+        template:
+          src: /data/tomcat-users.xml
+          dest: /usr/local/tomcat/conf
+      - name: Create folder
+        file:
+          path: /var/log/tomcat9/
+          state: directory
+          mode: 0777
+          owner: root
+          group: root
+      - name: copy war
+        copy:
+          src: /data/sample.war
+          dest: /usr/local/tomcat/webapps/sample.war
+      - name: Set JAVA_HOME
+        lineinfile:
+           dest: /etc/environment
+           state: present
+           regexp: '^JAVA_HOME'
+           line: 'JAVA_HOME=/usr/lib/jvm/java-1.8.0-openjdk-amd64/jre'
+      - name: copy tomcat service file
+        copy:
+         src: /data/tomcat.service
+         dest: /etc/systemd/system/tomcat.service
+      - name:  set env DEV
+        shell: export JAVA_OPTS="{{taille_dev}}"
+        when: env == "DEV"
+      - name:  set env PROD
+        shell: export JAVA_OPTS="{{taille_prod}}"
+        when: env == "PROD"
+      - name: renommer logging file
+        command: mv /usr/local/tomcat/conf/logging.properties /usr/local/tomcat/conf/logging_origin.properties
+      - name: ansible template logging
+        template:
+          src: /data/logging.properties
+          dest: /var/log/tomcat9
+      - name: Stop tomcat
+        shell: nohup /usr/local/tomcat/bin/shutdown.sh &
+      - name: Starting tomcat
+        shell: nohup /usr/local/tomcat/bin/startup.sh &
+#      - name: set service
+#        command: systemctl daemon-reload       
+#      - name: start service
+#        command: systemctl start tomcat
+#      - name: status service
+#        command: systemctl status tomcat
+#      - name: enable service
+#        command: systemctl enable tomcat
